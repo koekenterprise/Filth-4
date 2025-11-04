@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+FILTH4_MAGIC_NUMBER = b'FILTH4'
+ASCII_LOGO_DATA = b'*** FILTH 4 LOGO ***' 
+ASCII_LOGO_SIZE = len(ASCII_LOGO_DATA)
+
+
+
+def rle_compress_bytes(data):
+    
+    if not data:
+        return b""
+    compressed_data=bytearray()
+    count=1
+    
+    for i in range(1,len(data)):
+        if data[i] == data[i-1] and count < 255:
+            count += 1
+        else:
+            compressed_data.append(count)
+            compressed_data.append(data[i-1])
+            count = 1
+
+    compressed_data.append(count)
+    compressed_data.append(data[-1])
+    return bytes(compressed_data)
+
+def rle_decompress_bytes(compressed_data):
+  
+    decompressed_data = bytearray()
+    i = 0
+
+    while i < len(compressed_data):
+        try: 
+            count = compressed_data[i]
+            i += 1
+            
+            byte_to_repeat = compressed_data[i]
+            i += 1
+
+            decompressed_data.extend([byte_to_repeat] * count)
+        except IndexError:
+            print("Data Error: Probable corrupted or incomplete data")
+            break
+    return bytes(decompressed_data)
+
+
+def criar_filth4(output_filename, input_files):
+   
+    logo_data = ASCII_LOGO_DATA
+    logo_size = ASCII_LOGO_SIZE
+    logo_source = "ASCII Text (Fallback)"
+    
+    try:
+        if os.path.exists("F4.png"):
+            with open("F4.png", 'rb') as f_logo:
+                logo_data = f_logo.read()
+                logo_size = len(logo_data)
+                logo_source = f"F4.png (Custom Image, {logo_size} bytes)"
+    except Exception as e:
+        print(f"Failed to capture logo")
+
+    print(f"Logo identification source: {logo_source}")
+
+    try:
+         with open(output_filename, 'wb') as f_out:
+            
+            f_out.write(FILTH4_MAGIC_NUMBER)
+            f_out.write(logo_size.to_bytes(2, 'big')) 
+            f_out.write(logo_data) 
+            
+            print(f"Header '{FILTH4_MAGIC_NUMBER.decode()}' Output Valid: Magic Number and Logo.")
+
+            for file_path in input_files:
+                try:
+                    with open(file_path, 'rb') as f_in:
+                        file_data_bytes = f_in.read()
+
+                    
+                    compressed_data = rle_compress_bytes(file_data_bytes)
+                    
+                    
+                    file_name = os.path.basename(file_path).encode('utf-8')
+
+                    
+                    f_out.write(len(file_name).to_bytes(1, 'big'))
+                    f_out.write(file_name)
+
+                   
+                    f_out.write(len(compressed_data).to_bytes(4, 'big'))
+
+                  
+                    f_out.write(compressed_data)
+                    
+                    print(f"   -> '{file_path}' (Orig: {len(file_data_bytes)}B | Comp: {len(compressed_data)}B)")
+
+                except FileNotFoundError:
+                    print(f"  OUTPUT WARN '{file_path}' NOT FOUND")
+                except Exception as e:
+                    print(f"  OUTPUT ERROR processing '{file_path}': {e}")
+                    
+            f_out.write(b'\x00') 
+            print(f"\n File '{output_filename}' created sucesfully .")
+        
+    except Exception as e:
+     print(f"\nOutput Error: Unable to make .f4 file: {e}")
+
+def extrair_filth4(input_filename):
+    
+    try:
+            with open(input_filename, 'rb') as f_in:
+                
+                magic_number = f_in.read(len(FILTH4_MAGIC_NUMBER))
+                if magic_number != FILTH4_MAGIC_NUMBER:
+                    print(f"Invalid Magic Number for Filth4: {magic_number.decode()}")
+                    return
+
+               
+                logo_size_bytes = f_in.read(2)
+                if len(logo_size_bytes) < 2:
+                    print("[ERRO] Falha ao ler o tamanho do logo.")
+                    return
+                logo_size = int.from_bytes(logo_size_bytes, 'big')
+                f_in.read(logo_size) 
+                print("Extract Sucess: Valid logo and Magic Number.")
+                
+                
+                while True:
+                    name_len_byte = f_in.read(1)
+                    
+                    if name_len_byte == b'\x00': 
+                        break 
+                    if not name_len_byte: 
+                        break
+                        
+                    name_len = int.from_bytes(name_len_byte, 'big')
+                    
+                    file_name_bytes = f_in.read(name_len)
+                    file_name = file_name_bytes.decode('utf-8')
+
+                    compressed_size_bytes = f_in.read(4)
+                    if len(compressed_size_bytes) < 4:
+                        print(f"Output Deceive: Unexpected error when trying to read Filth4 file: '{file_name}'.")
+                        break
+                    compressed_size = int.from_bytes(compressed_size_bytes, 'big')
+
+                    compressed_data = f_in.read(compressed_size)
+                  
+                    decompressed_data = rle_decompress_bytes(compressed_data)
+                    
+                    with open(file_name, 'wb') as f_out:
+                        f_out.write(decompressed_data)
+                        
+                    print(f"   -> File '{file_name}' sucesfully extracted and decompacted. ({len(decompressed_data)}B)")
+
+                print("\nSucessful extraction.")
+
+    except FileNotFoundError:
+        print(f"Error: file '{input_filename}' not found .")
+    except Exception as e:
+        print(f"\nError: Tried to analyze .f4, however: {e}")
+
+def display_filth4_contents(input_filename):
+    
+    try:
+        with open(input_filename, 'rb') as f_in:
+            
+            magic_number = f_in.read(len(FILTH4_MAGIC_NUMBER))
+            if magic_number != FILTH4_MAGIC_NUMBER:
+                print(f"Invalid Magic Number for Filth4: {magic_number.decode()}")
+                return
+
+            logo_size_bytes = f_in.read(2)
+            if len(logo_size_bytes) < 2:
+                print("[ERROR] Couldn't read LOGO.")
+                return
+            logo_size = int.from_bytes(logo_size_bytes, 'big')
+            f_in.read(logo_size) 
+            print(f"Display Sucess: Valid logo and Magic Number. Reading contents of '{input_filename}'...")
+            print("-" * 50)
+            
+            
+            while True:
+                name_len_byte = f_in.read(1)
+                
+                if name_len_byte == b'\x00': 
+                    break 
+                if not name_len_byte: 
+                    break
+                    
+                name_len = int.from_bytes(name_len_byte, 'big')
+                file_name_bytes = f_in.read(name_len)
+                file_name = file_name_bytes.decode('utf-8')
+
+                compressed_size_bytes = f_in.read(4)
+                if len(compressed_size_bytes) < 4:
+                    print(f"Output Deceive: Unexpected error when trying to read Filth4 file: '{file_name}'.")
+                    break
+                compressed_size = int.from_bytes(compressed_size_bytes, 'big')
+
+                compressed_data = f_in.read(compressed_size)
+              
+                decompressed_data = rle_decompress_bytes(compressed_data)
+                
+                try:
+                    content = decompressed_data.decode('utf-8')
+                    print(f"\n---: {file_name}'s Content: ---")
+                    print(content)
+                    print("-----------------------------------")
+                except UnicodeDecodeError:
+                    print(f"\n---  {file_name}'s Content:  ---")
+                    print(f"[[ BINARY DATA (Lenght: {len(decompressed_data)} bytes) - UNREADABLE. ]]")
+                    print("-----------------------------------")
+
+
+            print("-" * 50)
+
+    except FileNotFoundError:
+        print(f"Error: file '{input_filename}' not found .")
+    except Exception as e:
+        print(f"\nError: Tried to analyze .f4, however: {e}")
+
+
+def main():
+    print("\n=== F/I/L/T/H 4 ===")
+
+    if len(sys.argv) < 3:
+        print("* Global use: Run filth4.sh!  *")
+        print("Compression: filth4 -c <output_file.f4> <arquivo1> [arquivo2...]")
+        print("Extraction:   filth4 -x <input_file.f4>")
+        print("Display:      filth4 -d <input_file.f4>")
+        print("\nExamples:")
+        print("  Compression: filth4 -c meus_files.f4 picture.jpg doc.txt")
+        print("  Extraction:   filth4 -x my_files.f4")
+        print("  Display:      filth4 -d my_files.f4")
+        return
+    
+    operation = sys.argv[1]
+    input_filename = sys.argv[2]
+    
+    if operation == '-c':
+        input_files = sys.argv[3:]
+        if not input_files:
+            print("Error: no file found.")
+            return
+        criar_filth4(input_filename, input_files)
+        
+    elif operation == '-x':
+        extrair_filth4(input_filename)
+        
+    elif operation == '-d':
+        display_filth4_contents(input_filename)
+
+    else:
+        print(f"Unknown Operation: {operation}. Use '-c', '-x' ou '-d'.")
+
+if __name__ == '__main__':
+    main()
